@@ -11,7 +11,7 @@
 	<cffunction name="hashProperty" access="public" output="false" returntype="void">
 		<cfargument name="property" type="string" required="false" default="" />
 		<cfargument name="algo" type="string" required="false" default="bcrypt" hint="Can be one of `SHA-256`, `SHA-512` or `bcrypt`." />
-		<cfargument name="encoding" type="string" required="false" default="" hint="Only used if the plugin uses the internal Hash() function." />
+    <cfargument name="encoding" type="string" required="false" default="" hint="Only used if the plugin uses the internal Hash() function." />
 		<cfargument name="rounds" type="string" required="false" default="12" hint="The number of times to hash the hash. This number will be an exponent of 2 so don't make it too big. example: 12 would be 2^12=4096 actual rounds." />
 		<cfargument name="salt" type="string" required="false" default="Th!5IsAcra3y5a1tStr!nG$" hint="Used for any algo other than bcrypt to help further protect passwords from cracking." />
 		<cfscript>
