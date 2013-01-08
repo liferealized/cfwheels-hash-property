@@ -30,7 +30,7 @@
 			for (loc.property in listToArray(arguments.properties))
 				variables.wheels.class.hashproperties[loc.property] = { algo = arguments.algo, encoding = arguments.encoding, rounds = arguments.rounds, salt = arguments.salt };
 			
-			beforeValidation(method="$hashProperties");
+			afterValidation(method="$hashProperties");
 		</cfscript>
 		<cfreturn />
 	</cffunction>
