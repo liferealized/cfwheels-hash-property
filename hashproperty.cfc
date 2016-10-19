@@ -2,11 +2,11 @@
 
 	<cffunction name="init" access="public" output="false">
 		<cfscript>
-			this.version = "1.1.7,1.1.8";	
+			this.version = "1.1.7,1.1.8,1.4.5";
 		</cfscript>
 		<cfreturn this />
 	</cffunction>
-	
+
 	<cffunction name="hashProperty" access="public" output="false" returntype="void">
 		<cfargument name="property" type="string" required="false" default="" />
 		<cfargument name="algo" type="string" required="false" default="bcrypt" hint="Can be one of `SHA-256`, `SHA-512` or `bcrypt`." />
@@ -29,7 +29,7 @@
 
 			for (loc.property in listToArray(arguments.properties))
 				variables.wheels.class.hashproperties[loc.property] = { algo = arguments.algo, encoding = arguments.encoding, rounds = arguments.rounds, salt = arguments.salt };
-			
+
 			afterValidation(method="$hashProperties");
 		</cfscript>
 		<cfreturn />
@@ -64,7 +64,7 @@
 				case "bcrypt":
 					return variables.wheels.class.bcrypt.hashpw(arguments.value, variables.wheels.class.bcrypt.gensalt(javaCast("int", arguments.rounds)));
 					break;
-				
+
 				default:
 					// we are dealing with normal hashing so do our own rounds
 					loc.value = arguments.value;
@@ -93,23 +93,23 @@
 	<cffunction name="$createBcryptJavaLoader" access="public" output="false" returntype="any">
 		<cfscript>
 			var loc = {};
-			
+
 			if (!StructKeyExists(server, "javaloader") || !IsStruct(server.javaloader))
 				server.javaloader = {};
-			
+
 			if (StructKeyExists(server.javaloader, "hashproperty"))
 				return server.javaloader.hashproperty;
-			
+
 			loc.relativePluginPath = application.wheels.webPath & application.wheels.pluginPath & "/hashproperty/";
 			loc.classPath = Replace(Replace(loc.relativePluginPath, "/", ".", "all") & "javaloader", ".", "", "one");
-			
+
 			loc.paths = ArrayNew(1);
 			loc.paths[1] = ExpandPath(loc.relativePluginPath & "lib/jbcrypt-0.4.jar");
-			
+
 			// set the javaLoader to the request in case we use it again
 			server.javaloader.hashproperty = $createObjectFromRoot(path=loc.classPath, fileName="JavaLoader", method="init", loadPaths=loc.paths, loadColdFusionClassPath=false);
 		</cfscript>
 		<cfreturn server.javaloader.hashproperty />
 	</cffunction>
-	
+
 </cfcomponent>
