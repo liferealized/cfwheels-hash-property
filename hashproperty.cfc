@@ -1,115 +1,167 @@
-<cfcomponent mixin="model" output="false">
+<cfscript>
+  component output="false" mixins="model" {
 
-	<cffunction name="init" access="public" output="false">
-		<cfscript>
-			this.version = "1.1.7,1.1.8,1.4.5";
-		</cfscript>
-		<cfreturn this />
-	</cffunction>
+    public HashProperty function init() {
+      this.version = "1.1.7,1.1.8,1.4.5";
+      return this;
+    }
 
-	<cffunction name="hashProperty" access="public" output="false" returntype="void">
-		<cfargument name="property" type="string" required="false" default="" />
-		<cfargument name="algo" type="string" required="false" default="bcrypt" hint="Can be one of `SHA-256`, `SHA-512` or `bcrypt`." />
-    <cfargument name="encoding" type="string" required="false" default="" hint="Only used if the plugin uses the internal Hash() function." />
-		<cfargument name="rounds" type="string" required="false" default="12" hint="The number of times to hash the hash. This number will be an exponent of 2 so don't make it too big. example: 12 would be 2^12=4096 actual rounds." />
-		<cfargument name="salt" type="string" required="false" default="Th!5IsAcra3y5a1tStr!nG$" hint="Used for any algo other than bcrypt to help further protect passwords from cracking." />
-		<cfscript>
-			var loc = {};
+    public void function hashProperty(
+        string property, string algorithm="HMACSHA256"
+      , numeric iterationExponent=18, boolean autoUpgrade=true) {
 
-			// normalize our arguments
-			if (!StructKeyExists(arguments, "properties"))
-				arguments.properties = arguments.property;
+      // normalize our arguments
+      if (!StructKeyExists(arguments, "properties"))
+        arguments.properties = arguments.property;
 
-			// make sure we have space to save our property info
-			if (!structKeyExists(variables.wheels.class, "hashproperties"))
-				variables.wheels.class.hashproperties = {};
+      // make sure we have space to save our property info
+      if (!structKeyExists(variables.wheels.class, "hashproperties"))
+        variables.wheels.class.hashproperties = {};
 
-			if (!structKeyExists(variables.wheels.class, "bcrypt") and arguments.algo == "bcrypt")
-				variables.wheels.class.bcrypt = $createBcryptJavaLoader().create("org.mindrot.jbcrypt.BCrypt").init();
+      // store the hashproperty information into the model so we can access it
+      // later on
+      for (local.property in listToArray(arguments.properties))
+        variables.wheels.class.hashproperties[local.property] = {
+            algorithm = arguments.algorithm
+          , autoUpgrade = arguments.autoUpgrade
+          , iterationExponent = arguments.iterationExponent
+        };
 
-			for (loc.property in listToArray(arguments.properties))
-				variables.wheels.class.hashproperties[loc.property] = { algo = arguments.algo, encoding = arguments.encoding, rounds = arguments.rounds, salt = arguments.salt };
+      // setup our validation to automatically hash a new password on save
+      afterValidation(method="$hashProperties");
+    }
 
-			afterValidation(method="$hashProperties");
-		</cfscript>
-		<cfreturn />
-	</cffunction>
+    public boolean function checkHash(
+      required string property, required string candidate) {
 
-	<cffunction name="checkHash" access="public" output="false" returntype="boolean">
-		<cfargument name="property" type="string" required="true" />
-		<cfargument name="candidate" type="string" required="true" />
-		<cfscript>
-			var loc = { properties = variables.wheels.class.hashproperties };
+      local.props = duplicate(variables.wheels.class.hashproperties);
 
-			if (!structKeyExists(loc.properties, arguments.property))
-				return false;
+      if (!structKeyExists(local.props, arguments.property))
+        return false;
 
-			if (loc.properties[arguments.property].algo == "bcrypt")
-				return variables.wheels.class.bcrypt.checkpw(arguments.candidate, this[arguments.property]);
-		</cfscript>
-		<cfreturn compare($hash(value=arguments.candidate, argumentCollection=loc.properties[arguments.property]), this[arguments.property]) == 0 />
-	</cffunction>
+      if (!hasProperty(arguments.property))
+        return false;
 
-	<cffunction name="$hash" access="public" output="false" returntype="string">
-		<cfargument name="value" type="string" required="true" />
-		<cfargument name="algo" type="string" required="true" />
-		<cfargument name="salt" type="string" required="true" />
-		<cfargument name="rounds" type="numeric" required="true" />
-		<cfargument name="encoding" type="string" required="false" default="" />
-		<cfscript>
-			var loc = {};
+      local.props = local.props[arguments.property];
 
-			switch (arguments.algo)
-			{
-				case "bcrypt":
-					return variables.wheels.class.bcrypt.hashpw(arguments.value, variables.wheels.class.bcrypt.gensalt(javaCast("int", arguments.rounds)));
-					break;
+      local.currentHash = this[arguments.property];
 
-				default:
-					// we are dealing with normal hashing so do our own rounds
-					loc.value = arguments.value;
-					loc.rounds = 2 ^ arguments.rounds;
+      // get our iterationExponent, salt and hash from the property
+      local.args = {
+          iterationExponent = listGetAt(local.currentHash, 1, ":")
+        , salt = listGetAt(local.currentHash, 2, ":")
+      }
 
-					for (loc.i = 1; loc.i lte loc.rounds; loc.i++)
-						loc.value = hash(loc.value & "::" & arguments.salt, arguments.algo, arguments.encoding);
+      structAppend(local.args, local.props, false);
 
-					return loc.value;
-					break;
-			}
-		</cfscript>
-	</cffunction>
+      local.candidateHash = $hash(
+          value = arguments.candidate
+        , argumentCollection = local.args
+      );
 
-	<cffunction name="$hashProperties" access="public" output="false" returntype="void">
-		<cfargument name="properties" type="struct" required="false" default="#variables.wheels.class.hashproperties#" />
-		<cfscript>
-			var loc = {};
+      local.comparison = $slowCompare(local.currentHash, local.candidateHash);
 
-			for (loc.property in arguments.properties)
-				if (hasChanged(loc.property) and structKeyExists(this, loc.property))
-					this[loc.property] = $hash(value=this[loc.property], argumentCollection=arguments.properties[loc.property]);
-		</cfscript>
-	</cffunction>
+      // if our comparison of the hashes passed and the current hash's
+      // iterationfactor is stale, upgrade the hash
+      if (local.comparison
+          && local.props.autoUpgrade
+          && local.args.iterationExponent != local.props.iterationExponent) {
 
-	<cffunction name="$createBcryptJavaLoader" access="public" output="false" returntype="any">
-		<cfscript>
-			var loc = {};
+        this[arguments.property] = arguments.candidate;
+        this.save();
+      }
 
-			if (!StructKeyExists(server, "javaloader") || !IsStruct(server.javaloader))
-				server.javaloader = {};
+      return local.comparison;
+    }
 
-			if (StructKeyExists(server.javaloader, "hashproperty"))
-				return server.javaloader.hashproperty;
+    public boolean function upgradeHash(
+      required string property, required string candidate) {
 
-			loc.relativePluginPath = application.wheels.webPath & application.wheels.pluginPath & "/hashproperty/";
-			loc.classPath = Replace(Replace(loc.relativePluginPath, "/", ".", "all") & "javaloader", ".", "", "one");
+      // check to make sure the password is the same as the current hash
+      if (!checkHash(argumentCollection=arguments))
+        return false;
 
-			loc.paths = ArrayNew(1);
-			loc.paths[1] = ExpandPath(loc.relativePluginPath & "lib/jbcrypt-0.4.jar");
+    }
 
-			// set the javaLoader to the request in case we use it again
-			server.javaloader.hashproperty = $createObjectFromRoot(path=loc.classPath, fileName="JavaLoader", method="init", loadPaths=loc.paths, loadColdFusionClassPath=false);
-		</cfscript>
-		<cfreturn server.javaloader.hashproperty />
-	</cffunction>
+    /*
+      Important method that always compares the two strings in the same amount
+      of time (constant-time algorithm).
+     */
+    public boolean function $slowCompare(required string a, required string b) {
 
-</cfcomponent>
+      // transform our strings to arrays
+      local.a = toBinary(toBase64(arguments.a));
+      local.b = toBinary(toBase64(arguments.b));
+
+      // xor our array lengths to start with the result
+      // if the array lengths are equal, xor is 0
+      local.result = bitXor(arrayLen(local.a), arrayLen(local.b));
+
+      for (local.i = 1; local.i lte arrayLen(local.a); local.i++)
+        local.result = bitOr(
+            local.result
+          , bitXor(local.a[local.i], local.b[local.i])
+        );
+
+      return (local.result == 0);
+    }
+
+    /*
+      $hash drops down to java to use the cryptox libraries to use the latest
+      standards in password storage as related to the articles below
+
+      https://nakedsecurity.sophos.com/2016/08/18/nists-new-password-rules-what-you-need-to-know/
+      https://nakedsecurity.sophos.com/2013/11/20/serious-security-how-to-store-your-users-passwords-safely/
+     */
+    public string function $hash(
+        required string value, required string algorithm
+      , required string iterationExponent, string salt="") {
+
+      // lets generate the salt if it wasn't passed in
+      if (!len(arguments.salt))
+        for (local.i = 1; local.i lte 2; local.i++)
+          arguments.salt &= replace(lCase(createUUID()), "-", "", "all");
+
+      // get the secret key factory to create our hash
+      local.skf = createObject("java", "javax.crypto.SecretKeyFactory")
+        .getInstance(javaCast("string", "PBKDF2With" & arguments.algorithm));
+
+      // run our pbekeyspec with our iterationExponent to slow down
+      // offline attacks
+      local.spec = createObject("java", "javax.crypto.spec.PBEKeySpec")
+        .init(
+            javaCast("char[]", listToArray(arguments.value, ""))
+          , javaCast("char[]", listToArray(arguments.salt, ""))
+          , javaCast("int", 2 ^ arguments.iterationExponent)
+          , javacast("int", right(arguments.algorithm, 3))
+        );
+
+      // get our final hash
+      local.key = local.skf.generateSecret(local.spec);
+
+      // we store our iterationExponent, salt and the hash together as
+      // one string in the property seperated by colons
+      local.result = [
+          arguments.iterationExponent
+        , arguments.salt
+        , lCase(binaryEncode(local.key.getEncoded(), "hex"))
+      ];
+
+      return arrayToList(local.result, ":");
+    }
+
+    public void function $hashProperties() {
+
+      local.properties = variables.wheels.class.hashProperties;
+
+      for (local.property in local.properties) {
+        if (hasChanged(local.property) and structKeyExists(this, local.property)) {
+          this[local.property] = $hash(
+              value = this[local.property]
+            , argumentCollection = local.properties[local.property]
+          );
+        }
+      }
+    }
+  }
+</cfscript>
