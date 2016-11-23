@@ -110,7 +110,8 @@
       $hash drops down to java to use the cryptox libraries to use the latest
       standards in password storage as related to the articles below
 
-      https://nakedsecurity.sophos.com/2016/08/18/nists-new-password-rules-what-you-need-to-know/
+      https://www.owasp.org/index.php/Password_Storage_Cheat_Sheet
+      https://www.owasp.org/index.php/Hashing_Java
       https://nakedsecurity.sophos.com/2013/11/20/serious-security-how-to-store-your-users-passwords-safely/
      */
     public string function $hash(
