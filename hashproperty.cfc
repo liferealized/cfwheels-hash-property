@@ -74,15 +74,6 @@
       return local.comparison;
     }
 
-    public boolean function upgradeHash(
-      required string property, required string candidate) {
-
-      // check to make sure the password is the same as the current hash
-      if (!checkHash(argumentCollection=arguments))
-        return false;
-
-    }
-
     /*
       Important method that always compares the two strings in the same amount
       of time (constant-time algorithm).
