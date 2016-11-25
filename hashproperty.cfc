@@ -85,6 +85,21 @@
       return local.comparison;
     }
 
+    public any function onMissingMethod(required string missingMethodName, required struct missingMethodArguments) {
+
+      var coreMethod = core.onMissingMethod;
+
+      if (left(arguments.missingMethodName, 5) == "check") {
+
+        local.property = ReplaceNoCase(arguments.missingMethodName, "check", "");
+
+        if (structKeyExists(variables.wheels.class.hashproperties, local.property))
+          return checkHash(property=local.property, argumentCollection=arguments.missingMethodArguments);
+      }
+
+      return coreMethod(argumentCollection=arguments);
+    }
+
     /*****************************************
       HELPER METHODS
     ******************************************/
