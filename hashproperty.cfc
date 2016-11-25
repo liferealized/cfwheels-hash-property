@@ -1,13 +1,17 @@
 <cfscript>
-  component output="false" mixins="model" {
+  component output="false" mixin="model" {
 
     public HashProperty function init() {
       this.version = "1.1.7,1.1.8,1.4.5";
       return this;
     }
 
+    /*****************************************
+      PUBLIC METHODS
+    ******************************************/
+
     public void function hashProperty(
-        string property, string algorithm="HMACSHA256"
+        string property, string algorithm="PBKDF2WithHMACSHA256"
       , numeric iterationExponent=18, boolean autoUpgrade=true) {
 
       // normalize our arguments
@@ -44,12 +48,13 @@
 
       local.props = local.props[arguments.property];
 
-      local.currentHash = this[arguments.property];
+      local.currentHash = trim(this[arguments.property]);
 
       // get our iterationExponent, salt and hash from the property
       local.args = {
           iterationExponent = listGetAt(local.currentHash, 1, ":")
-        , salt = listGetAt(local.currentHash, 2, ":")
+        , algorithm = listGetAt(local.currentHash, 2, ":")
+        , salt = base64ToHex(listGetAt(local.currentHash, 3, ":"))
       }
 
       structAppend(local.args, local.props, false);
@@ -61,28 +66,62 @@
 
       local.comparison = $slowCompare(local.currentHash, local.candidateHash);
 
-      // if our comparison of the hashes passed and the current hash's
-      // iterationfactor is stale, upgrade the hash
+      // if our comparison of the hashes passed and either the current hash's
+      // iterationfactor is stale or the algorithm used is stale, upgrade the
+      // stored hash to our new settings as long as the developer hasn't turned
+      // off auto upgrading when calling hashProperty()
       if (local.comparison
           && local.props.autoUpgrade
-          && local.args.iterationExponent != local.props.iterationExponent) {
+          && (local.args.iterationExponent != local.props.iterationExponent
+              || local.args.algorithm != local.props.algorithm)) {
 
         this[arguments.property] = arguments.candidate;
+
+        // save will see that the property storing the password has changed
+        // and will rehash it with the new setting automatically
         this.save();
       }
 
       return local.comparison;
     }
 
+    /*****************************************
+      HELPER METHODS
+    ******************************************/
+
     /*
-      Important method that always compares the two strings in the same amount
+      Helper methos are a direct result of the work by Ben Nadel. Thanks Ben!
+      https://www.bennadel.com/blog/2414-converting-data-between-string-binary-hex-and-base64-format-in-coldfusion.htm
+     */
+
+   public string function base64ToHex(required string base64Value) {
+      local.binaryValue = binaryDecode(arguments.base64Value, "base64");
+      return lCase(binaryEncode(local.binaryValue, "hex"));
+    }
+
+    public string function hexToBase64(required string hexValue) {
+      local.binaryValue = binaryDecode(arguments.hexValue, "hex");
+      return binaryEncode(local.binaryValue, "base64");
+    }
+
+    public binary function stringToBinary(required string stringValue) {
+      local.base64Value = toBase64(arguments.stringValue);
+      return toBinary(local.base64Value);
+    }
+
+    /*****************************************
+      PRIVATE METHODS
+    ******************************************/
+
+    /*
+      Important method that always compares the two hashes in the same amount
       of time (constant-time algorithm).
      */
     public boolean function $slowCompare(required string a, required string b) {
 
       // transform our strings to arrays
-      local.a = toBinary(toBase64(arguments.a));
-      local.b = toBinary(toBase64(arguments.b));
+      local.a = stringToBinary(arguments.a);
+      local.b = stringToBinary(arguments.b);
 
       // xor our array lengths to start with the result
       // if the array lengths are equal, xor is 0
@@ -116,7 +155,7 @@
 
       // get the secret key factory to create our hash
       local.skf = createObject("java", "javax.crypto.SecretKeyFactory")
-        .getInstance(javaCast("string", "PBKDF2With" & arguments.algorithm));
+        .getInstance(javaCast("string", arguments.algorithm));
 
       // run our pbekeyspec with our iterationExponent to slow down
       // offline attacks
@@ -131,12 +170,17 @@
       // get our final hash
       local.key = local.skf.generateSecret(local.spec);
 
-      // we store our iterationExponent, salt and the hash together as
-      // one string in the property seperated by colons
+      // we store our iterationExponent, algo used, salt and the hash
+      // together as one string in the db seperated by colons so that the
+      // developer can upgrade the encryption or iternation exponent used
+      // without having an adverse effect on overall functionality.
+      // This also allows the plugin to seamlessly upgrade the user to the
+      // new hashing algo/exponent should the developer change them
       local.result = [
           arguments.iterationExponent
-        , arguments.salt
-        , lCase(binaryEncode(local.key.getEncoded(), "hex"))
+        , arguments.algorithm
+        , hexToBase64(arguments.salt)
+        , binaryEncode(local.key.getEncoded(), "base64")
       ];
 
       return arrayToList(local.result, ":");
